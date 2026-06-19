@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>TikTok Mini App</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #010101;
+      --surface: #161616;
+      --accent: #FE2C55;
+      --accent2: #25F4EE;
+      --text: #FFFFFF;
+      --muted: #888;
+      --card-h: 100dvh;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      overflow: hidden;
+      height: 100dvh;
+      width: 100vw;
+      touch-action: pan-y;
+    }
+
+    /* ── Feed ── */
+    #feed {
+      height: 100dvh;
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    #feed::-webkit-scrollbar { display: none; }
+
+    .video-card {
+      position: relative;
+      height: var(--card-h);
+      width: 100%;
+      scroll-snap-align: start;
+      background: #000;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    /* Thumbnail / placeholder */
+    .thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .thumb-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 80px;
+      background: linear-gradient(160deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    }
+
+    /* Gradient overlay */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to top,
+        rgba(0,0,0,.85) 0%,
+        rgba(0,0,0,.1) 40%,
+        transparent 70%
+      );
+      pointer-events: none;
+    }
+
+    /* Info panel */
+    .info {
+      position: absolute;
+      bottom: 90px;
+      left: 0;
+      right: 70px;
+      padding: 0 14px;
+    }
+    .info .username {
+      font-weight: 700;
+      font-size: 15px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .info .username .badge {
+      background: var(--accent);
+      border-radius: 4px;
+      font-size: 10px;
+      padding: 1px 5px;
+      font-weight: 600;
+    }
+    .info .caption {
+      font-size: 13px;
+      line-height: 1.5;
+      color: rgba(255,255,255,.9);
+      margin-bottom: 10px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .info .music-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: rgba(255,255,255,.75);
+    }
+    .music-icon {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--surface);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      animation: spin 3s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Action buttons */
+    .actions {
+      position: absolute;
+      bottom: 90px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+    }
+    .action-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .action-icon {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.12);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      transition: transform .15s, background .15s;
+      backdrop-filter: blur(6px);
+    }
+    .action-btn:active .action-icon {
+      transform: scale(.88);
+      background: rgba(255,255,255,.22);
+    }
+    .action-btn.liked .action-icon { background: rgba(254,44,85,.25); }
+    .action-count {
+      font-size: 11px;
+      color: rgba(255,255,255,.85);
+      font-weight: 600;
+    }
+
+    /* Avatar */
+    .avatar-wrap {
+      position: relative;
+      margin-bottom: 6px;
+    }
+    .avatar {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 2px solid #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      overflow: hidden;
+    }
+    .follow-dot {
+      position: absolute;
+      bottom: -4px; left: 50%;
+      transform: translateX(-50%);
+      width: 18px; height: 18px;
+      background: var(--accent);
+      border-radius: 50%;
+      border: 2px solid var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px;
+      line-height: 1;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .follow-dot.followed { background: var(--muted); }
+
+    /* Bottom nav */
+    #nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 80px;
+      background: rgba(1,1,1,.92);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding-bottom: env(safe-area-inset-bottom);
+      border-top: 1px solid rgba(255,255,255,.07);
+      z-index: 100;
+    }
+    .nav-item {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 3px; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      flex: 1;
+    }
+    .nav-icon { font-size: 22px; }
+    .nav-label { font-size: 10px; color: var(--muted); }
+    .nav-item.active .nav-label { color: #fff; }
+    .nav-item.active .nav-icon { filter: drop-shadow(0 0 6px var(--accent)); }
+
+    /* Post button */
+    .post-btn {
+      position: relative;
+      width: 42px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .post-btn::before, .post-btn::after {
+      content: '';
+      position: absolute;
+      width: 32px; height: 28px;
+      border-radius: 8px;
+    }
+    .post-btn::before { background: var(--accent2); left: 2px; }
+    .post-btn::after  { background: var(--accent);  right: 2px; }
+    .post-btn span {
+      position: relative; z-index: 1;
+      width: 34px; height: 28px;
+      background: #fff; color: #000;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; font-weight: 700;
+    }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 100px; left: 50%; transform: translateX(-50%);
+      background: rgba(255,255,255,.18);
+      backdrop-filter: blur(10px);
+      color: #fff;
+      padding: 9px 20px;
+      border-radius: 20px;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity .3s;
+      pointer-events: none;
+      z-index: 200;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+
+    /* Loading */
+    #loader {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; z-index: 999;
+      transition: opacity .4s;
+    }
+    #loader.hide { opacity: 0; pointer-events: none; }
+    .loader-logo { font-size: 52px; }
+    .loader-bar {
+      width: 120px; height: 3px;
+      background: var(--surface);
+      border-radius: 2px; overflow: hidden;
+    }
+    .loader-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      border-radius: 2px;
+      animation: load 1.2s ease forwards;
+    }
+    @keyframes load { from { width: 0 } to { width: 100% } }
+    .loader-text { font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loader">
+  <div class="loader-logo">🎵</div>
+  <div class="loader-bar"><div class="loader-bar-fill"></div></div>
+  <div class="loader-text">Memuat video trending...</div>
+</div>
+
+<!-- Feed -->
+<div id="feed"></div>
+
+<!-- Bottom Nav -->
+<nav id="nav">
+  <div class="nav-item active" onclick="showToast('Beranda')">
+    <span class="nav-icon">🏠</span>
+    <span class="nav-label">Beranda</span>
+  </div>
+  <div class="nav-item" onclick="showToast('Teman')">
+    <span class="nav-icon">👥</span>
+    <span class="nav-label">Teman</span>
+  </div>
+  <div class="nav-item" onclick="showToast('Buat video')">
+    <div class="post-btn"><span>＋</span></div>
+    <span class="nav-label" style="color:transparent">Post</span>
+  </div>
+  <div class="nav-item" onclick="showToast('Pesan')">
+    <span class="nav-icon">💬</span>
+    <span class="nav-label">Pesan</span>
+  </div>
+  <div class="nav-item" onclick="showToast('Profil')">
+    <span class="nav-icon">👤</span>
+    <span class="nav-label">Profil</span>
+  </div>
+</nav>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+  tg.setHeaderColor('#010101');
+  tg.setBackgroundColor('#010101');
+}
+
+// ── Dummy video data (trending-style) ──
+const videos = [
+  {
+    id: 1,
+    emoji: '🌅',
+    bg: 'linear-gradient(160deg,#1a1a2e,#16213e,#0f3460)',
+    user: '@traveler_id',
+    caption: 'Sunrise di Bromo bikin hati adem banget 🌋 POV naik kuda ke kawah tengah malam ✨',
+    music: 'Nuansa Bening - Koes Plus',
+    likes: '1.2M',
+    comments: '48.3K',
+    saves: '320K',
+    shares: '89K',
+    followed: false
+  },
+  {
+    id: 2,
+    emoji: '🍜',
+    bg: 'linear-gradient(160deg,#2d1515,#4a1515,#7a2020)',
+    user: '@foodie.nusantara',
+    caption: 'Recipe Mie Ayam Geprek viral 10 juta views! Gampang banget bikinnya di rumah 🔥',
+    music: 'Goyang Maumere - DJ Remix',
+    likes: '4.7M',
+    comments: '210K',
+    saves: '1.1M',
+    shares: '430K',
+    followed: false
+  },
+  {
+    id: 3,
+    emoji: '💃',
+    bg: 'linear-gradient(160deg,#0d0d2b,#1a0533,#2d0b4e)',
+    user: '@dance.crew.jkt',
+    caption: 'Dance challenge terbaru! Follow kalau bisa ngikutin gerakannya 🕺✨ #DanceChallenge',
+    music: 'Harleys in Hawaii - Katy Perry Remix',
+    likes: '8.9M',
+    comments: '670K',
+    saves: '2.3M',
+    shares: '1.2M',
+    followed: true
+  },
+  {
+    id: 4,
+    emoji: '🐈',
+    bg: 'linear-gradient(160deg,#0a1628,#0d2137,#0a2e45)',
+    user: '@kucinglucu.official',
+    caption: 'Kucing ini literally ngerti bahasa manusia 😭 dia jawab tiap kali dipanggil 🐾',
+    music: 'Cute - Kawaii Music',
+    likes: '12.1M',
+    comments: '920K',
+    saves: '4.5M',
+    shares: '2.8M',
+    followed: false
+  },
+  {
+    id: 5,
+    emoji: '🤣',
+    bg: 'linear-gradient(160deg,#1a1500,#2e2500,#4a3a00)',
+    user: '@comedy.id',
+    caption: 'Cara beli bakso yang bener vs salah 😂😂😂 relatable banget sumpah!',
+    music: 'Ngakak Time - Sound FX',
+    likes: '21.4M',
+    comments: '1.4M',
+    saves: '6.7M',
+    shares: '5.1M',
+    followed: false
+  },
+  {
+    id: 6,
+    emoji: '🎨',
+    bg: 'linear-gradient(160deg,#1a002e,#2e0050,#4a0080)',
+    user: '@digitalart.id',
+    caption: 'Speed paint karakter anime dari nol sampai jadi! ⏱️ Total 8 jam diringkas jadi 60 detik 🎭',
+    music: 'Lo-fi Study Mix - Chillhop',
+    likes: '3.3M',
+    comments: '95K',
+    saves: '890K',
+    shares: '210K',
+    followed: false
+  }
+];
+
+const likedSet = new Set();
+const followedSet = new Set();
+videos.forEach(v => { if(v.followed) followedSet.add(v.id); });
+
+function fmt(n) {
+  // already formatted strings passed in
+  return n;
+}
+
+function renderCard(v) {
+  const liked = likedSet.has(v.id);
+  const followed = followedSet.has(v.id);
+  return `
+  <div class="video-card" id="card-${v.id}">
+    <div class="thumb-placeholder" style="background:${v.bg}">${v.emoji}</div>
+    <div class="overlay"></div>
+
+    <!-- Info -->
+    <div class="info">
+      <div class="username">
+        ${v.user}
+        ${v.id <= 2 ? '' : '<span class="badge">✓</span>'}
+      </div>
+      <div class="caption">${v.caption}</div>
+      <div class="music-row">
+        <div class="music-icon">🎵</div>
+        <span>${v.music}</span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions">
+      <!-- Avatar -->
+      <div class="avatar-wrap">
+        <div class="avatar">${v.user.charAt(1).toUpperCase()}</div>
+        <div class="follow-dot ${followed ? 'followed' : ''}" id="follow-${v.id}" onclick="toggleFollow(${v.id}, event)">
+          ${followed ? '✓' : '+'}
+        </div>
+      </div>
+
+      <!-- Like -->
+      <div class="action-btn ${liked ? 'liked' : ''}" id="like-${v.id}" onclick="toggleLike(${v.id})">
+        <div class="action-icon">${liked ? '❤️' : '🤍'}</div>
+        <span class="action-count" id="like-count-${v.id}">${v.likes}</span>
+      </div>
+
+      <!-- Comment -->
+      <div class="action-btn" onclick="showToast('Komentar segera hadir!')">
+        <div class="action-icon">💬</div>
+        <span class="action-count">${v.comments}</span>
+      </div>
+
+      <!-- Save -->
+      <div class="action-btn" onclick="showToast('Video disimpan! 🔖')">
+        <div class="action-icon">🔖</div>
+        <span class="action-count">${v.saves}</span>
+      </div>
+
+      <!-- Share -->
+      <div class="action-btn" onclick="handleShare(${v.id})">
+        <div class="action-icon">↗️</div>
+        <span class="action-count">${v.shares}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function toggleLike(id) {
+  const btn = document.getElementById(`like-${id}`);
+  const icon = btn.querySelector('.action-icon');
+  if (likedSet.has(id)) {
+    likedSet.delete(id);
+    btn.classList.remove('liked');
+    icon.textContent = '🤍';
+    showToast('Like dibatalkan');
+  } else {
+    likedSet.add(id);
+    btn.classList.add('liked');
+    icon.textContent = '❤️';
+    showToast('❤️ Disukai!');
+  }
+}
+
+function toggleFollow(id, e) {
+  e.stopPropagation();
+  const dot = document.getElementById(`follow-${id}`);
+  if (followedSet.has(id)) {
+    followedSet.delete(id);
+    dot.classList.remove('followed');
+    dot.textContent = '+';
+    showToast('Berhenti mengikuti');
+  } else {
+    followedSet.add(id);
+    dot.classList.add('followed');
+    dot.textContent = '✓';
+    showToast('✅ Mengikuti!');
+  }
+}
+
+function handleShare(id) {
+  if (tg && tg.switchInlineQuery) {
+    tg.switchInlineQuery(`video_${id}`, ['users','groups']);
+  } else {
+    showToast('🔗 Link disalin!');
+  }
+}
+
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+// Build feed
+const feed = document.getElementById('feed');
+feed.innerHTML = videos.map(renderCard).join('');
+
+// Hide loader
+setTimeout(() => {
+  document.getElementById('loader').classList.add('hide');
+}, 1300);
+</script>
+</body>
+</html>
