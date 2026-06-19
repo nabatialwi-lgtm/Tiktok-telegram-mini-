@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>TikTok Mini App</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root { --bg: #010101; --accent: #FE2C55; --accent2: #25F4EE; --text: #fff; --muted: #888; }
+    body { background: var(--bg); color: var(--text); font-family: 'Helvetica Neue', Arial, sans-serif; overflow: hidden; height: 100dvh; width: 100vw; }
+
+    #feed { height: 100dvh; overflow-y: scroll; scroll-snap-type: y mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    #feed::-webkit-scrollbar { display: none; }
+
+    .video-card { position: relative; height: 100dvh; width: 100%; scroll-snap-align: start; background: #000; overflow: hidden; }
+
+    .video-card video { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    .thumb-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 80px; background: linear-gradient(160deg,#1a1a2e,#16213e,#0f3460); }
+
+    .overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,.85) 0%, rgba(0,0,0,.1) 40%, transparent 70%); pointer-events: none; }
+
+    .info { position: absolute; bottom: 90px; left: 0; right: 70px; padding: 0 14px; }
+    .info .username { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+    .info .caption { font-size: 13px; line-height: 1.5; color: rgba(255,255,255,.9); margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .info .music-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: rgba(255,255,255,.75); }
+    .music-icon { width: 28px; height: 28px; border-radius: 50%; background: #222; display: flex; align-items: center; justify-content: center; font-size: 13px; animation: spin 3s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .actions { position: absolute; bottom: 90px; right: 10px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+    .action-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .action-icon { width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; font-size: 20px; transition: transform .15s; backdrop-filter: blur(6px); }
+    .action-btn:active .action-icon { transform: scale(.88); }
+    .action-btn.liked .action-icon { background: rgba(254,44,85,.25); }
+    .action-count { font-size: 11px; color: rgba(255,255,255,.85); font-weight: 600; }
+
+    .avatar { width: 44px; height: 44px; border-radius: 50%; border: 2px solid #fff; object-fit: cover; background: #222; display: flex; align-items: center; justify-content: center; font-size: 18px; overflow: hidden; margin-bottom: 6px; }
+    .follow-dot { width: 18px; height: 18px; background: var(--accent); border-radius: 50%; border: 2px solid #000; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; cursor: pointer; margin: -8px auto 10px; }
+    .follow-dot.followed { background: var(--muted); }
+
+    #nav { position: fixed; bottom: 0; left: 0; right: 0; height: 80px; background: rgba(1,1,1,.92); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: space-around; border-top: 1px solid rgba(255,255,255,.07); z-index: 100; }
+    .nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; flex: 1; -webkit-tap-highlight-color: transparent; }
+    .nav-icon { font-size: 22px; }
+    .nav-label { font-size: 10px; color: var(--muted); }
+    .nav-item.active .nav-label { color: #fff; }
+
+    .post-btn { position: relative; width: 42px; height: 28px; display: flex; align-items: center; justify-content: center; }
+    .post-btn::before, .post-btn::after { content: ''; position: absolute; width: 32px; height: 28px; border-radius: 8px; }
+    .post-btn::before { background: var(--accent2); left: 2px; }
+    .post-btn::after { background: var(--accent); right: 2px; }
+    .post-btn span { position: relative; z-index: 1; width: 34px; height: 28px; background: #fff; color: #000; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; }
+
+    #toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,.18); backdrop-filter: blur(10px); color: #fff; padding: 9px 20px; border-radius: 20px; font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 200; white-space: nowrap; }
+    #toast.show { opacity: 1; }
+
+    #loader { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 999; transition: opacity .4s; }
+    #loader.hide { opacity: 0; pointer-events: none; }
+    .loader-logo { font-size: 52px; }
+    .loader-bar { width: 120px; height: 3px; background: #222; border-radius: 2px; overflow: hidden; }
+    .loader-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 2px; animation: load 1.5s ease forwards; }
+    @keyframes load { from { width: 0 } to { width: 100% } }
+    .loader-text { font-size: 13px; color: var(--muted); }
+
+    .play-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 60px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+    .play-overlay.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="loader-logo">🎵</div>
+  <div class="loader-bar"><div class="loader-bar-fill"></div></div>
+  <div class="loader-text" id="loader-text">Memuat video trending...</div>
+</div>
+
+<div id="feed"></div>
+
+<nav id="nav">
+  <div class="nav-item active" onclick="showToast('Beranda')">
+    <span class="nav-icon">🏠</span>
+    <span class="nav-label">Beranda</span>
+  </div>
+  <div class="nav-item" onclick="showToast('Teman')">
+    <span class="nav-icon">👥</span>
+    <span class="nav-label">Teman</span>
+  </div>
+  <div class="nav-item" onclick="showToast('Buat video')">
+    <div class="post-btn"><span>＋</span></div>
+    <span class="nav-label" style="color:transparent">Post</span>
+  </div>
+  <div class="nav-item" onclick="showToast('Pesan')">
+    <span class="nav-icon">💬</span>
+    <span class="nav-label">Pesan</span>
+  </div>
+  <div class="nav-item" onclick="showToast('Profil')">
+    <span class="nav-icon">👤</span>
+    <span class="nav-label">Profil</span>
+  </div>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor('#010101'); tg.setBackgroundColor('#010101'); }
+
+const RAPIDAPI_KEY = "3b47e40890msh26037cee903387cp13cddfjsn51a01548d8ca";
+const RAPIDAPI_HOST = "tiktok-video-no-watermark2.p.rapidapi.com";
+
+const likedSet = new Set();
+const followedSet = new Set();
+let videos = [];
+
+function fmtNum(n) {
+  if (!n) return '0';
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+async function fetchTrendingVideos() {
+  try {
+    document.getElementById('loader-text').textContent = 'Mengambil video trending...';
+    const res = await fetch('https://tiktok-video-no-watermark2.p.rapidapi.com/feed/list?region=ID&count=10', {
+      method: 'GET',
+      headers: {
+        'x-rapidapi-key': RAPIDAPI_KEY,
+        'x-rapidapi-host': RAPIDAPI_HOST
+      }
+    });
+    const data = await res.json();
+    if (data && data.data && data.data.videos && data.data.videos.length > 0) {
+      return data.data.videos;
+    }
+    throw new Error('No videos');
+  } catch(e) {
+    console.log('Feed error, trying search...', e);
+    try {
+      const res2 = await fetch('https://tiktok-video-no-watermark2.p.rapidapi.com/user/video/list?unique_id=tiktok&count=10&cursor=0', {
+        method: 'GET',
+        headers: {
+          'x-rapidapi-key': RAPIDAPI_KEY,
+          'x-rapidapi-host': RAPIDAPI_HOST
+        }
+      });
+      const data2 = await res2.json();
+      if (data2 && data2.data && data2.data.videos) return data2.data.videos;
+    } catch(e2) {}
+    return null;
+  }
+}
+
+function renderCard(v, idx) {
+  const id = v.video_id || v.id || idx;
+  const author = v.author?.nickname || v.author?.unique_id || '@user';
+  const caption = v.title || v.desc || 'Video TikTok trending 🔥';
+  const music = v.music_info?.title || v.music?.title || 'Original Sound';
+  const likes = fmtNum(v.digg_count || v.statistics?.digg_count || 0);
+  const comments = fmtNum(v.comment_count || v.statistics?.comment_count || 0);
+  const shares = fmtNum(v.share_count || v.statistics?.share_count || 0);
+  const videoUrl = v.play || v.video?.play_addr?.url_list?.[0] || '';
+  const cover = v.cover || v.video?.cover?.url_list?.[0] || '';
+  const avatar = v.author?.avatar || '';
+
+  return `
+  <div class="video-card" id="card-${idx}">
+    ${videoUrl
+      ? `<video id="vid-${idx}" src="${videoUrl}" loop playsinline webkit-playsinline preload="auto" poster="${cover}" style="width:100%;height:100%;object-fit:cover;display:block;"></video>`
+      : cover
+        ? `<img src="${cover}" style="width:100%;height:100%;object-fit:cover;display:block;" />`
+        : `<div class="thumb-placeholder">🎵</div>`
+    }
+    <div class="overlay"></div>
+    <div class="play-overlay" id="play-${idx}">▶️</div>
+
+    <div class="info">
+      <div class="username">@${author}</div>
+      <div class="caption">${caption}</div>
+      <div class="music-row">
+        <div class="music-icon">🎵</div>
+        <span>${music}</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <div>
+        <div class="avatar">${avatar ? `<img src="${avatar}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'"/>` : author.charAt(1).toUpperCase()}</div>
+        <div class="follow-dot" id="follow-${idx}" onclick="toggleFollow(${idx}, event)">+</div>
+      </div>
+      <div class="action-btn" id="like-${idx}" onclick="toggleLike(${idx})">
+        <div class="action-icon">🤍</div>
+        <span class="action-count">${likes}</span>
+      </div>
+      <div class="action-btn" onclick="showToast('Komentar segera hadir!')">
+        <div class="action-icon">💬</div>
+        <span class="action-count">${comments}</span>
+      </div>
+      <div class="action-btn" onclick="showToast('Video disimpan! 🔖')">
+        <div class="action-icon">🔖</div>
+        <span class="action-count">0</span>
+      </div>
+      <div class="action-btn" onclick="showToast('Link disalin! 🔗')">
+        <div class="action-icon">↗️</div>
+        <span class="action-count">${shares}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderFallback() {
+  const fallbacks = [
+    { emoji:'🌅', bg:'linear-gradient(160deg,#1a1a2e,#16213e,#0f3460)', user:'traveler_id', caption:'Sunrise di Bromo bikin hati adem banget 🌋', music:'Nuansa Bening - Koes Plus', likes:'1.2M', comments:'48.3K', shares:'89K' },
+    { emoji:'🍜', bg:'linear-gradient(160deg,#2d1515,#4a1515,#7a2020)', user:'foodie.nusantara', caption:'Recipe Mie Ayam Geprek viral! Gampang banget bikinnya 🔥', music:'Goyang Maumere - Remix', likes:'4.7M', comments:'210K', shares:'430K' },
+    { emoji:'💃', bg:'linear-gradient(160deg,#0d0d2b,#1a0533,#2d0b4e)', user:'dance.crew.jkt', caption:'Dance challenge terbaru! #DanceChallenge 🕺✨', music:'Harleys in Hawaii Remix', likes:'8.9M', comments:'670K', shares:'1.2M' },
+    { emoji:'🐈', bg:'linear-gradient(160deg,#0a1628,#0d2137,#0a2e45)', user:'kucinglucu.official', caption:'Kucing ini ngerti bahasa manusia 😭🐾', music:'Cute - Kawaii Music', likes:'12.1M', comments:'920K', shares:'2.8M' },
+    { emoji:'🤣', bg:'linear-gradient(160deg,#1a1500,#2e2500,#4a3a00)', user:'comedy.id', caption:'Cara beli bakso yang bener vs salah 😂 relatable!', music:'Ngakak Sound FX', likes:'21.4M', comments:'1.4M', shares:'5.1M' },
+  ];
+  return fallbacks.map((v,i) => `
+  <div class="video-card" id="card-${i}">
+    <div class="thumb-placeholder" style="background:${v.bg}">${v.emoji}</div>
+    <div class="overlay"></div>
+    <div class="info">
+      <div class="username">@${v.user}</div>
+      <div class="caption">${v.caption}</div>
+      <div class="music-row"><div class="music-icon">🎵</div><span>${v.music}</span></div>
+    </div>
+    <div class="actions">
+      <div>
+        <div class="avatar">${v.emoji}</div>
+        <div class="follow-dot" id="follow-${i}" onclick="toggleFollow(${i},event)">+</div>
+      </div>
+      <div class="action-btn" id="like-${i}" onclick="toggleLike(${i})">
+        <div class="action-icon">🤍</div>
+        <span class="action-count">${v.likes}</span>
+      </div>
+      <div class="action-btn" onclick="showToast('Komentar segera hadir!')">
+        <div class="action-icon">💬</div>
+        <span class="action-count">${v.comments}</span>
+      </div>
+      <div class="action-btn" onclick="showToast('Disimpan! 🔖')">
+        <div class="action-icon">🔖</div>
+        <span class="action-count">0</span>
+      </div>
+      <div class="action-btn" onclick="showToast('Link disalin! 🔗')">
+        <div class="action-icon">↗️</div>
+        <span class="action-count">${v.shares}</span>
+      </div>
+    </div>
+  </div>`).join('');
+}
+
+function toggleLike(idx) {
+  const btn = document.getElementById(`like-${idx}`);
+  const icon = btn.querySelector('.action-icon');
+  if (likedSet.has(idx)) { likedSet.delete(idx); btn.classList.remove('liked'); icon.textContent = '🤍'; showToast('Like dibatalkan'); }
+  else { likedSet.add(idx); btn.classList.add('liked'); icon.textContent = '❤️'; showToast('❤️ Disukai!'); }
+}
+
+function toggleFollow(idx, e) {
+  e.stopPropagation();
+  const dot = document.getElementById(`follow-${idx}`);
+  if (followedSet.has(idx)) { followedSet.delete(idx); dot.classList.remove('followed'); dot.textContent = '+'; showToast('Berhenti mengikuti'); }
+  else { followedSet.add(idx); dot.classList.add('followed'); dot.textContent = '✓'; showToast('✅ Mengikuti!'); }
+}
+
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+// Auto play video saat scroll
+function setupVideoObserver() {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const video = entry.target.querySelector('video');
+      if (!video) return;
+      if (entry.isIntersecting) { video.play().catch(()=>{}); }
+      else { video.pause(); video.currentTime = 0; }
+    });
+  }, { threshold: 0.7 });
+  document.querySelectorAll('.video-card').forEach(card => observer.observe(card));
+}
+
+// Tap untuk pause/play
+function setupTapPlay() {
+  document.querySelectorAll('.video-card').forEach((card, idx) => {
+    const video = card.querySelector('video');
+    if (!video) return;
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.actions') || e.target.closest('.follow-dot')) return;
+      const overlay = document.getElementById(`play-${idx}`);
+      if (video.paused) { video.play(); if(overlay){overlay.classList.remove('show');} }
+      else { video.pause(); if(overlay){overlay.classList.add('show');} }
+    });
+  });
+}
+
+async function init() {
+  const feed = document.getElementById('feed');
+  const data = await fetchTrendingVideos();
+  if (data && data.length > 0) {
+    feed.innerHTML = data.map((v,i) => renderCard(v,i)).join('');
+    setupVideoObserver();
+    setupTapPlay();
+  } else {
+    feed.innerHTML = renderFallback();
+  }
+  setTimeout(() => document.getElementById('loader').classList.add('hide'), 300);
+}
+
+init();
+</script>
+</body>
+</html>
